@@ -27,6 +27,8 @@ from ..helpers.resolve_ref_types import update_ref_deps
 # Import the base class
 from .base import ElabPass
 
+from tqdm import tqdm
+
 # Union of the types which serve as "source signals",
 # i.e. the things which we are resolve `PortRef`s *to*.
 # If we find one of these connected to a group of connected ports,
@@ -84,9 +86,10 @@ class ResolvePortRefs(ElabPass):
                 if isinstance(conn, NoConn):
                     module_portrefs.add(_get_connref(inst, portname))
 
-        def follow(pref: PortRef, group: SetList) -> None:
+        def follow(pref: PortRef, group: SetList, bar: tqdm) -> None:
             """Closure to recursively follow `pref`, adding its outward and inward connections to `group`.
             Removes encountered entries from `module_portrefs` along the way."""
+            bar.update(1)
 
             if pref in group:
                 return  # Already done
@@ -99,25 +102,26 @@ class ResolvePortRefs(ElabPass):
             # Add, and if necessary recursively follow, its instance connection
             conn = pref.inst.conns.get(pref.portname, None)
             if isinstance(conn, PortRef):
-                follow(conn, group)
+                follow(conn, group, bar)
             else:  # Add ultimate signal `Source`s to the group
                 group.add(conn)
 
             # And recursively follow its connected ports
             for connected_port in pref._connected_ports:
-                follow(connected_port, group)
+                follow(connected_port, group, bar)
 
         # Collect groups of connected `PortRef`s
         groups: List[List[Optional[Connectable]]] = list()
 
-        while module_portrefs:
-            # Create a new group, and recursively follow port refs to populate it
-            group = SetList()
-            follow(module_portrefs.pop(), group)
+        with tqdm(total=len(module_portrefs.list) * 3) as pbar:
+            while module_portrefs:
+                # Create a new group, and recursively follow port refs to populate it
+                group = SetList()
+                follow(module_portrefs.pop(), group, pbar)
 
-            # Filter out the `None` entries before sticking in the `groups` list-of-lists.
-            group: List[Connectable] = [x for x in group.order if x is not None]
-            groups.append(group)
+                # Filter out the `None` entries before sticking in the `groups` list-of-lists.
+                group: List[Connectable] = [x for x in group.order if x is not None]
+                groups.append(group)
 
         # For each group, find and/or create a Signal to replace all the PortRefs with.
         for group in groups:
