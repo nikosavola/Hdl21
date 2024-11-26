@@ -5,6 +5,7 @@ Creates concrete `Signal`s and `BundleInstance`s to replace `PortRef`s.
 """
 
 # Std-Lib Imports
+from contextlib import nullcontext
 import copy
 from typing import Union, List, Optional, Dict
 
@@ -86,10 +87,11 @@ class ResolvePortRefs(ElabPass):
                 if isinstance(conn, NoConn):
                     module_portrefs.add(_get_connref(inst, portname))
 
-        def follow(pref: PortRef, group: SetList, bar: tqdm) -> None:
+        def follow(pref: PortRef, group: SetList, bar: tqdm | nullcontext) -> None:
             """Closure to recursively follow `pref`, adding its outward and inward connections to `group`.
             Removes encountered entries from `module_portrefs` along the way."""
-            bar.update(1)
+            if bar:
+                bar.update(1)
 
             if pref in group:
                 return  # Already done
@@ -113,7 +115,8 @@ class ResolvePortRefs(ElabPass):
         # Collect groups of connected `PortRef`s
         groups: List[List[Optional[Connectable]]] = list()
 
-        with tqdm(total=len(module_portrefs.list) * 3) as pbar:
+        # with tqdm(total=len(module_portrefs.list) * 3) if len(module_portrefs.list) > 3 else nullcontext() as pbar:
+        with nullcontext() as pbar:
             while module_portrefs:
                 # Create a new group, and recursively follow port refs to populate it
                 group = SetList()
